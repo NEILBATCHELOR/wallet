@@ -1,0 +1,43 @@
+API Types (/src/types/api.ts)
+
+Standard response format for consistent error handling
+Helper functions for creating success/error responses
+
+
+Supabase Client (/src/lib/supabase-client.ts)
+
+Connection to your Supabase database
+
+
+Wallet Service (/src/services/wallet-service.ts)
+
+Core service that interfaces with your blockchain adapters
+Methods for wallet management (create, read, update, delete)
+Transaction operations (create, sign, broadcast)
+Balance retrieval
+
+
+Wallet API Client (/src/lib/api/wallet-api.ts)
+
+Client-side wrapper for the service layer
+Simplified interface for your components
+
+
+React Hook (/src/hooks/useWalletApi.ts)
+
+React state management for API calls
+Loading, error, and data states
+Callback functions for all operations
+
+
+Validation Utilities (/src/lib/validation.ts)
+
+Zod schemas for form validation
+Helper functions for data validation
+
+
+Documentation (/README-API.md)
+
+Comprehensive documentation of the API
+Usage examples
+Database schema information
