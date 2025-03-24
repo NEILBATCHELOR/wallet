@@ -1,0 +1,83 @@
+for a production-ready multi-signature wallet supporting multiple blockchains, you'll need to subscribe to some blockchain services. Here's a breakdown of what you'll need:
+Required Services
+1. RPC Node Providers
+For each blockchain, you need reliable RPC (Remote Procedure Call) endpoints to interact with the networks:
+
+EVM Chains (Ethereum, Polygon, Avalanche, etc.):
+
+Alchemy - Free tier includes 300M compute units/month
+Infura - Free tier with 100K requests/day
+QuickNode - Free tier with limited requests
+
+
+Solana:
+
+Helius - Has a free tier
+QuickNode - Offers Solana endpoints
+
+
+Bitcoin:
+
+BlockCypher - Free tier with rate limits
+Mempool.space API - Free but with rate limits
+
+
+
+2. Indexing/Data Services
+For transaction history, token balances, and other data:
+
+The Graph (for EVM chains) - Free for public subgraphs
+Covalent - Unified API for multiple chains with free tier
+
+Alternatives to Paid Services
+1. Public Nodes
+You can use public RPC endpoints, but these have drawbacks:
+
+Less reliable (may go down unexpectedly)
+Rate limited
+Higher latency
+Security concerns
+
+2. Run Your Own Nodes
+Most blockchain networks allow you to run your own nodes:
+
+More reliable and secure
+Higher upfront cost (server resources)
+Requires technical expertise to maintain
+Needs significant storage (1TB+ for Ethereum full node)
+
+3. Community-Run Services
+Some community projects offer free APIs with reasonable limits:
+
+NOWNodes - Free tier with API key
+Chainstack - Limited free tier
+
+Implementation Considerations
+In the code I provided, you'll need to update these parts:
+typescriptCopy// In BlockchainAdapterFactory.ts
+const NETWORKS: Record<string, NetworkInfo> = {
+  'ethereum': {
+    // ...
+    rpcUrl: 'https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY', // Replace this
+    // ...
+  },
+  // Other networks...
+}
+Recommended Approach
+
+Development Phase:
+
+Use free tiers from Alchemy, Infura, or similar services
+Start with testnet development (Sepolia, Mumbai, etc.)
+
+
+Production Launch:
+
+Subscribe to paid tiers based on expected usage
+Consider a multi-provider strategy for redundancy
+
+
+Long-term:
+
+Evaluate running your own nodes for primary chains
+Use third-party services as backups
