@@ -23,6 +23,7 @@ import "./styles/main.css"
 function App() {
   const [initialized, setInitialized] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [vaultClient, setVaultClient] = useState<VaultClient | null>(null)
 
   // Initialize vault worker and other services
   useEffect(() => {
@@ -31,8 +32,9 @@ function App() {
         setLoading(true)
         
         // Initialize secure vault worker
-        const vaultClient = new VaultClient()
-        await vaultClient.waitForReady()
+        const client = new VaultClient()
+        await client.waitForReady()
+        setVaultClient(client)
         
         // Check authentication status
         const isAuthenticated = localStorage.getItem("auth_token") !== null
@@ -66,7 +68,7 @@ function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <ToastProvider>
-          <SecureVaultProvider>
+          <SecureVaultProvider vaultClient={vaultClient}>
             <WalletProvider>
               <div className="min-h-screen flex flex-col">
                 <Header />

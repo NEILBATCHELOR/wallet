@@ -1,128 +1,157 @@
 // src/context/SecureVaultContext.tsx
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { VaultClient } from "../services/vault/VaultClient"
-import { VaultStatus, VaultSecurityLevel } from "../services/vault/SecureVault"
+import { VaultSecurityLevel } from "../services/vault/SecureVault"
 
 interface SecureVaultContextType {
-  vaultClient: VaultClient
-  vaultStatus: VaultStatus | null
+  vaultClient: VaultClient | null
   isInitialized: boolean
   isLocked: boolean
-  initializeVault: (masterPassword: string, securityLevel: VaultSecurityLevel) => Promise<boolean>
+  isReady: boolean
+  error: string | null
+  initializeVault: (masterPassword: string, securityLevel?: VaultSecurityLevel) => Promise<boolean>
   unlockVault: (masterPassword: string, mfaCode?: string) => Promise<boolean>
   lockVault: () => Promise<boolean>
-  keys: any[]
-  refreshKeys: () => Promise<void>
+  getStatus: () => Promise<any>
 }
 
 const SecureVaultContext = createContext<SecureVaultContextType | undefined>(undefined)
 
-export function SecureVaultProvider({ children }: { children: ReactNode }) {
-  const [vaultClient] = useState(() => new VaultClient())
-  const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null)
+interface SecureVaultProviderProps {
+  children: ReactNode
+  vaultClient?: VaultClient
+}
+
+export function SecureVaultProvider({ children, vaultClient: externalVaultClient }: SecureVaultProviderProps) {
+  const [vaultClient, setVaultClient] = useState<VaultClient | null>(externalVaultClient || null)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isLocked, setIsLocked] = useState(true)
-  const [keys, setKeys] = useState<any[]>([])
-  
-  // Initialize and check vault status
+  const [isReady, setIsReady] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Initialize the vault client if not provided externally
   useEffect(() => {
-    async function checkVaultStatus() {
-      try {
-        await vaultClient.waitForReady()
-        const status = await vaultClient.getStatus()
-        setVaultStatus(status)
-        setIsInitialized(status.initialized)
-        setIsLocked(status.locked)
-        
-        // If vault is unlocked, fetch keys
-        if (status.initialized && !status.locked) {
-          const vaultKeys = await vaultClient.getKeys()
-          setKeys(vaultKeys)
-        }
-      } catch (error) {
-        console.error("Error checking vault status:", error)
-      }
+    if (externalVaultClient) {
+      setVaultClient(externalVaultClient)
+      setIsReady(true)
+      
+      // Check vault status
+      externalVaultClient.getStatus()
+        .then(status => {
+          setIsInitialized(status.initialized)
+          setIsLocked(status.locked)
+        })
+        .catch(err => {
+          setError(err.message || 'Failed to get vault status')
+        })
     }
+  }, [externalVaultClient])
+
+  // Initialize the vault with a master password
+  const initializeVault = async (masterPassword: string, securityLevel?: VaultSecurityLevel) => {
+    if (!vaultClient) return false
     
-    checkVaultStatus()
-  }, [vaultClient])
-  
-  // Initialize vault
-  async function initializeVault(masterPassword: string, securityLevel: VaultSecurityLevel) {
     try {
+      setError(null)
+      
+      if (!isReady) {
+        throw new Error('Vault worker is not ready')
+      }
+      
       const success = await vaultClient.initialize(masterPassword, securityLevel)
+      
       if (success) {
-        const status = await vaultClient.getStatus()
-        setVaultStatus(status)
         setIsInitialized(true)
         setIsLocked(true)
       }
+      
       return success
-    } catch (error) {
-      console.error("Error initializing vault:", error)
+    } catch (err: any) {
+      setError(err.message || 'Failed to initialize vault')
       return false
     }
   }
-  
-  // Unlock vault
-  async function unlockVault(masterPassword: string, mfaCode?: string) {
+
+  // Unlock the vault with the master password
+  const unlockVault = async (masterPassword: string, mfaCode?: string) => {
+    if (!vaultClient) return false
+    
     try {
-      const success = await vaultClient.unlock(masterPassword, mfaCode)
-      if (success) {
-        const status = await vaultClient.getStatus()
-        setVaultStatus(status)
-        setIsLocked(false)
-        
-        // Fetch keys after unlock
-        const vaultKeys = await vaultClient.getKeys()
-        setKeys(vaultKeys)
+      setError(null)
+      
+      if (!isReady) {
+        throw new Error('Vault worker is not ready')
       }
+      
+      if (!isInitialized) {
+        throw new Error('Vault is not initialized')
+      }
+      
+      const success = await vaultClient.unlock(masterPassword, mfaCode)
+      
+      if (success) {
+        setIsLocked(false)
+      }
+      
       return success
-    } catch (error) {
-      console.error("Error unlocking vault:", error)
+    } catch (err: any) {
+      setError(err.message || 'Failed to unlock vault')
       return false
     }
   }
-  
-  // Lock vault
-  async function lockVault() {
+
+  // Lock the vault
+  const lockVault = async () => {
+    if (!vaultClient) return false
+    
     try {
+      setError(null)
+      
+      if (!isReady) {
+        throw new Error('Vault worker is not ready')
+      }
+      
       const success = await vaultClient.lock()
+      
       if (success) {
         setIsLocked(true)
-        setKeys([])
       }
+      
       return success
-    } catch (error) {
-      console.error("Error locking vault:", error)
+    } catch (err: any) {
+      setError(err.message || 'Failed to lock vault')
       return false
     }
   }
-  
-  // Refresh keys
-  async function refreshKeys() {
-    if (!isLocked) {
-      try {
-        const vaultKeys = await vaultClient.getKeys()
-        setKeys(vaultKeys)
-      } catch (error) {
-        console.error("Error refreshing keys:", error)
+
+  // Get the vault status
+  const getStatus = async () => {
+    if (!vaultClient) throw new Error('Vault client not available')
+    
+    try {
+      if (!isReady) {
+        throw new Error('Vault worker is not ready')
       }
+      
+      return await vaultClient.getStatus()
+    } catch (err: any) {
+      setError(err.message || 'Failed to get vault status')
+      throw err
     }
   }
-  
+
   const value = {
     vaultClient,
-    vaultStatus,
     isInitialized,
     isLocked,
+    isReady,
+    error,
     initializeVault,
     unlockVault,
     lockVault,
-    keys,
-    refreshKeys
+    getStatus
   }
-  
+
   return (
     <SecureVaultContext.Provider value={value}>
       {children}
@@ -132,8 +161,10 @@ export function SecureVaultProvider({ children }: { children: ReactNode }) {
 
 export function useSecureVault() {
   const context = useContext(SecureVaultContext)
+  
   if (context === undefined) {
-    throw new Error("useSecureVault must be used within a SecureVaultProvider")
+    throw new Error('useSecureVault must be used within a SecureVaultProvider')
   }
+  
   return context
 }
