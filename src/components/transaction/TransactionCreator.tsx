@@ -1,234 +1,203 @@
-// src/components/transaction/TransactionCreator.tsx
-import { useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
-import { useWallet } from "../../context/WalletContext"
-import { useToast } from "../../context/ToastContext"
-import { BlockchainAdapterFactory } from "../../core/BlockchainAdapterFactory"
-import { Button } from "../ui/button"
-import { Input } from "../ui/input"
-import { Textarea } from "../ui/textarea"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card"
-import { Label } from "../ui/label"
-import { Switch } from "../ui/switch"
+// src/components/transactions/TransactionCreator.tsx
+import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import * as z from 'zod'
+import { useMultiSigWallet } from '@/hooks/useMultiSigWallet'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/use-toast'
 
-function TransactionCreator() {
-  const { id: walletId } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const { currentWallet, createProposal } = useWallet()
-  const { addToast } = useToast()
+interface TransactionCreatorProps {
+  walletId: string
+  onSuccess?: () => void
+}
+
+const formSchema = z.object({
+  title: z.string().min(1, 'Title is required'),
+  toAddress: z.string().min(1, 'Recipient address is required'),
+  amount: z.string().refine(val => !isNaN(Number(val)) && Number(val) > 0, {
+    message: 'Amount must be a positive number',
+  }),
+  tokenAddress: z.string().optional(),
+  description: z.string().optional(),
+  data: z.string().optional(),
+})
+
+function TransactionCreator({ walletId, onSuccess }: TransactionCreatorProps) {
+  const { createProposal, loading } = useMultiSigWallet({ walletId })
+  const { toast } = useToast()
+  const [isAdvanced, setIsAdvanced] = useState(false)
   
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [toAddress, setToAddress] = useState("")
-  const [amount, setAmount] = useState("")
-  const [isToken, setIsToken] = useState(false)
-  const [tokenAddress, setTokenAddress] = useState("")
-  const [data, setData] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: '',
+      toAddress: '',
+      amount: '',
+      tokenAddress: '',
+      description: '',
+      data: '',
+    },
+  })
   
-  if (!walletId || !currentWallet) {
-    navigate("/wallets")
-    return null
-  }
-  
-  function validateForm() {
-    const newErrors: Record<string, string> = {}
-    
-    if (!title.trim()) {
-      newErrors.title = "Title is required"
-    }
-    
-    if (!toAddress.trim()) {
-      newErrors.toAddress = "Recipient address is required"
-    } else {
-      const adapter = BlockchainAdapterFactory.getAdapter(currentWallet.blockchain)
-      if (!adapter.validateAddress(toAddress)) {
-        newErrors.toAddress = "Invalid address format"
-      }
-    }
-    
-    if (!amount.trim()) {
-      newErrors.amount = "Amount is required"
-    } else {
-      const amountValue = parseFloat(amount)
-      if (isNaN(amountValue) || amountValue <= 0) {
-        newErrors.amount = "Amount must be a positive number"
-      }
-    }
-    
-    if (isToken && !tokenAddress.trim()) {
-      newErrors.tokenAddress = "Token address is required when sending tokens"
-    } else if (isToken) {
-      const adapter = BlockchainAdapterFactory.getAdapter(currentWallet.blockchain)
-      if (!adapter.validateAddress(tokenAddress)) {
-        newErrors.tokenAddress = "Invalid token address format"
-      }
-    }
-    
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-  
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    
-    if (!validateForm()) return
-    
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
-      setIsSubmitting(true)
-      
-      const result = await createProposal({
+      await createProposal(
         walletId,
-        title,
-        description,
-        toAddress,
-        amount,
-        tokenAddress: isToken ? tokenAddress : undefined,
-        data: data.trim() || undefined
+        values.title,
+        values.description || '',
+        values.toAddress,
+        values.amount,
+        values.tokenAddress || undefined,
+        values.data || undefined
+      )
+      
+      toast({
+        title: 'Transaction created',
+        description: 'Your transaction has been created successfully.',
       })
       
-      addToast(`Transaction proposal "${title}" created successfully`, "success")
-      navigate(`/wallets/${walletId}/transactions/${result.id}`)
+      form.reset()
+      if (onSuccess) onSuccess()
     } catch (error) {
-      console.error("Failed to create transaction proposal:", error)
-      addToast(
-        error instanceof Error ? error.message : "Failed to create transaction proposal", 
-        "error"
-      )
-    } finally {
-      setIsSubmitting(false)
+      console.error('Error creating transaction:', error)
+      toast({
+        title: 'Failed to create transaction',
+        description: error instanceof Error ? error.message : 'An unknown error occurred',
+        variant: 'destructive',
+      })
     }
   }
   
   return (
-    <div className="max-w-2xl mx-auto">
-      <Card>
-        <CardHeader>
-          <CardTitle>Create Transaction Proposal</CardTitle>
-          <CardDescription>
-            Propose a new transaction for wallet: {currentWallet.name}
-          </CardDescription>
-        </CardHeader>
-        
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-6">
-            {/* Title */}
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="Send funds to treasury"
-                error={errors.title}
+    <Card>
+      <CardHeader>
+        <CardTitle>Create Transaction</CardTitle>
+        <CardDescription>
+          Create a new transaction that will require approval from the wallet's signers
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Title</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Transfer to Treasury" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="toAddress"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Recipient Address</FormLabel>
+                  <FormControl>
+                    <Input placeholder="0x..." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input placeholder="1.0" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              {errors.title && <p className="text-red-500 text-sm">{errors.title}</p>}
-            </div>
-            
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (Optional)</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="Explain the purpose of this transaction"
-                rows={3}
-              />
-            </div>
-            
-            {/* Recipient Address */}
-            <div className="space-y-2">
-              <Label htmlFor="toAddress">Recipient Address</Label>
-              <Input
-                id="toAddress"
-                value={toAddress}
-                onChange={e => setToAddress(e.target.value)}
-                placeholder="0x..."
-                error={errors.toAddress}
-              />
-              {errors.toAddress && <p className="text-red-500 text-sm">{errors.toAddress}</p>}
-            </div>
-            
-            {/* Amount */}
-            <div className="space-y-2">
-              <Label htmlFor="amount">Amount</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="amount"
-                  type="text"
-                  value={amount}
-                  onChange={e => setAmount(e.target.value)}
-                  placeholder="0.0"
-                  error={errors.amount}
-                />
-                <span>
-                  {isToken ? "Tokens" : currentWallet.blockchain.toUpperCase()}
-                </span>
-              </div>
-              {errors.amount && <p className="text-red-500 text-sm">{errors.amount}</p>}
-            </div>
-            
-            {/* Token Toggle */}
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="isToken"
-                checked={isToken}
-                onCheckedChange={setIsToken}
-              />
-              <Label htmlFor="isToken">Send Token</Label>
-            </div>
-            
-            {/* Token Address (conditional) */}
-            {isToken && (
-              <div className="space-y-2">
-                <Label htmlFor="tokenAddress">Token Address</Label>
-                <Input
-                  id="tokenAddress"
-                  value={tokenAddress}
-                  onChange={e => setTokenAddress(e.target.value)}
-                  placeholder="0x..."
-                  error={errors.tokenAddress}
-                />
-                {errors.tokenAddress && <p className="text-red-500 text-sm">{errors.tokenAddress}</p>}
-              </div>
-            )}
-            
-            {/* Custom Data (for advanced users) */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <Label htmlFor="data">Custom Data (Optional)</Label>
-                <span className="text-xs text-gray-500">For advanced users</span>
-              </div>
-              <Textarea
-                id="data"
-                value={data}
-                onChange={e => setData(e.target.value)}
-                placeholder="0x..."
-                rows={3}
+              
+              <FormField
+                control={form.control}
+                name="tokenAddress"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Token Address (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Leave empty for native token" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Empty for native token
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </div>
-          </CardContent>
-          
-          <CardFooter className="flex justify-between">
+            
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="Details about this transaction" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
             <Button 
               type="button" 
-              variant="outline"
-              onClick={() => navigate(`/wallets/${walletId}`)}
+              variant="link" 
+              onClick={() => setIsAdvanced(!isAdvanced)}
+              className="px-0"
             >
-              Cancel
+              {isAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
             </Button>
-            <Button 
-              type="submit"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Creating..." : "Create Proposal"}
+            
+            {isAdvanced && (
+              <FormField
+                control={form.control}
+                name="data"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contract Data (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="0x..." 
+                        className="font-mono"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Hexadecimal data for contract interactions
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+            
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Creating...' : 'Create Transaction'}
             </Button>
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
   )
 }
 

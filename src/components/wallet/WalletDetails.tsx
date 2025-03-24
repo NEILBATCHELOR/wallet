@@ -1,4 +1,4 @@
-// src/components/WalletDetails.tsx
+// src/components/wallet/WalletDetails.tsx
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useMultiSigWallet } from '@/hooks/useMultiSigWallet'
@@ -6,8 +6,8 @@ import { useWalletBalance } from '@/hooks/useWalletBalance'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { TransactionList } from './transactions/TransactionList'
-import { TransactionCreator } from './transactions/TransactionCreator'
+import { TransactionList } from '../transaction/TransactionList'
+import { TransactionCreator } from '../transaction/TransactionCreator'
 
 function WalletDetails() {
   const { id } = useParams<{ id: string }>()

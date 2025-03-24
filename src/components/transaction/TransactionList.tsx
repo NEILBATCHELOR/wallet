@@ -1,150 +1,178 @@
 // src/components/transactions/TransactionList.tsx
-import { useState } from 'react'
-import { useMultiSigWallet } from '@/hooks/useMultiSigWallet'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TransactionDetails } from './TransactionDetails'
-import { Button } from '@/components/ui/button'
-import { formatDistanceToNow } from 'date-fns'
+"use client"
 
-interface TransactionListProps {
-  walletId: string
-}
+import { useState, useEffect } from "react"
+import { useWallet } from "@/context/WalletContext"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { TransactionSigning } from "./TransactionSigning"
+import { formatDistanceToNow } from "date-fns"
 
-function TransactionList({ walletId }: TransactionListProps) {
-  const { proposals, loading, loadProposals } = useMultiSigWallet({ walletId })
-  const [selectedProposal, setSelectedProposal] = useState<string | null>(null)
-  
-  // Handle refresh
-  async function handleRefresh() {
-    await loadProposals(walletId)
+function TransactionList({ walletId }: { walletId: string }) {
+  const { currentWallet } = useWallet()
+  const [transactions, setTransactions] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null)
+  const [signDialogOpen, setSignDialogOpen] = useState(false)
+
+  useEffect(() => {
+    async function loadTransactions() {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        const response = await fetch(`/api/wallets/${walletId}/transactions`)
+        
+        if (!response.ok) {
+          throw new Error("Failed to load transactions")
+        }
+        
+        const data = await response.json()
+        setTransactions(data.transactions)
+      } catch (err: any) {
+        setError(err.message || "Failed to load transactions")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    if (walletId) {
+      loadTransactions()
+    }
+  }, [walletId])
+
+  function getStatusBadge(status: string) {
+    switch (status.toLowerCase()) {
+      case "pending":
+        return <Badge variant="outline" className="bg-yellow-50 text-yellow-800 border-yellow-200">Pending</Badge>
+      case "executed":
+        return <Badge variant="outline" className="bg-green-50 text-green-800 border-green-200">Executed</Badge>
+      case "failed":
+        return <Badge variant="outline" className="bg-red-50 text-red-800 border-red-200">Failed</Badge>
+      case "rejected":
+        return <Badge variant="outline" className="bg-gray-50 text-gray-800 border-gray-200">Rejected</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
+    }
   }
-  
-  // If a proposal is selected, show its details
-  if (selectedProposal) {
+
+  function handleSignTransaction(transaction: any) {
+    setSelectedTransaction(transaction)
+    setSignDialogOpen(true)
+  }
+
+  function handleTransactionCompleted() {
+    setSignDialogOpen(false)
+    // Refresh transaction list
+    fetch(`/api/wallets/${walletId}/transactions`)
+      .then(res => res.json())
+      .then(data => setTransactions(data.transactions))
+      .catch(err => console.error("Failed to refresh transactions", err))
+  }
+
+  if (isLoading) {
+    return <div className="py-8 text-center">Loading transactions...</div>
+  }
+
+  if (error) {
     return (
-      <div className="space-y-4">
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={() => setSelectedProposal(null)}
-        >
-          ← Back to Transactions
+      <div className="py-8 text-center">
+        <div className="text-red-600 mb-4">{error}</div>
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Retry
         </Button>
-        <TransactionDetails 
-          proposalId={selectedProposal} 
-          walletId={walletId} 
-        />
       </div>
     )
   }
-  
-  // Filter proposals by status
-  const pendingProposals = proposals.filter(p => p.status === 'pending')
-  const executedProposals = proposals.filter(p => p.status === 'executed')
-  
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
+
+  if (transactions.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
           <CardTitle>Transactions</CardTitle>
           <CardDescription>
-            Manage and sign pending transactions
+            No transactions found for this wallet
           </CardDescription>
-        </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleRefresh}
-          disabled={loading}
-        >
-          Refresh
-        </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="py-8 text-center text-muted-foreground">
+            <p>There are no transaction proposals yet.</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Transactions</CardTitle>
+        <CardDescription>
+          All transaction proposals for {currentWallet?.name}
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <div className="py-8 text-center text-gray-500">Loading transactions...</div>
-        ) : proposals.length === 0 ? (
-          <div className="py-8 text-center text-gray-500">No transactions found</div>
-        ) : (
-          <Tabs defaultValue="pending">
-            <TabsList className="mb-4">
-              <TabsTrigger value="pending">
-                Pending ({pendingProposals.length})
-              </TabsTrigger>
-              <TabsTrigger value="executed">
-                Executed ({executedProposals.length})
-              </TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="pending">
-              <TransactionItems
-                proposals={pendingProposals}
-                onSelect={setSelectedProposal}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Title</TableHead>
+              <TableHead>Recipient</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Signatures</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {transactions.map((tx) => (
+              <TableRow key={tx.id}>
+                <TableCell className="font-medium">{tx.title}</TableCell>
+                <TableCell className="font-mono text-xs">{tx.to_address.substring(0, 8)}...{tx.to_address.substring(tx.to_address.length - 6)}</TableCell>
+                <TableCell>{tx.value} {tx.token_symbol || ""}</TableCell>
+                <TableCell>{getStatusBadge(tx.status)}</TableCell>
+                <TableCell>{tx.signatures?.length || 0}/{currentWallet?.threshold}</TableCell>
+                <TableCell>{formatDistanceToNow(new Date(tx.created_at), { addSuffix: true })}</TableCell>
+                <TableCell>
+                  {tx.status === "pending" && (!tx.signatures || !tx.signatures.find(s => s.signer === currentWallet?.address)) && (
+                    <Button size="sm" onClick={() => handleSignTransaction(tx)}>
+                      Sign
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        <Dialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Sign Transaction</DialogTitle>
+            </DialogHeader>
+            {selectedTransaction && (
+              <TransactionSigning
+                transactionId={selectedTransaction.id}
+                walletId={walletId}
+                proposalData={{
+                  ...selectedTransaction,
+                  threshold: currentWallet?.threshold,
+                  blockchain: currentWallet?.blockchain,
+                  raw: selectedTransaction.data ? JSON.parse(selectedTransaction.data) : {}
+                }}
+                onComplete={handleTransactionCompleted}
+                onCancel={() => setSignDialogOpen(false)}
               />
-            </TabsContent>
-            
-            <TabsContent value="executed">
-              <TransactionItems
-                proposals={executedProposals}
-                onSelect={setSelectedProposal}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
+            )}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   )
-}
-
-// Helper component to display transaction items
-function TransactionItems({ 
-  proposals, 
-  onSelect 
-}: { 
-  proposals: any[], 
-  onSelect: (id: string) => void 
-}) {
-  if (proposals.length === 0) {
-    return <div className="py-4 text-center text-gray-500">No transactions</div>
-  }
-  
-  return (
-    <div className="space-y-2">
-      {proposals.map(proposal => (
-        <div 
-          key={proposal.id}
-          className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer border"
-          onClick={() => onSelect(proposal.id)}
-        >
-          <div className="flex flex-col">
-            <div className="font-medium">{proposal.title}</div>
-            <div className="text-sm text-gray-500">
-              {proposal.value} {proposal.token_symbol || 'native'} 
-              • {formatDate(proposal.created_at)}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="text-sm text-gray-500">
-              {proposal.signatures.length}/{proposal.threshold} signatures
-            </div>
-            <Button variant="ghost" size="sm">
-              View
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// Helper to format date
-function formatDate(dateString: string) {
-  try {
-    return formatDistanceToNow(new Date(dateString), { addSuffix: true })
-  } catch {
-    return 'Invalid date'
-  }
 }
 
 export { TransactionList }
